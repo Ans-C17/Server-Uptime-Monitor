@@ -89,6 +89,7 @@ def insert_value(connection, url, status, latency, timestamp):
     cursor.execute(
         "INSERT INTO history (url, status, latency, timestamp) VALUES (?, ?, ?, ?)", (url, status, latency, timestamp)
     )
+    
     connection.commit()
 
 def get_previous_values(connection):
@@ -100,7 +101,7 @@ def get_previous_values(connection):
     """)
 
     rows = cursor.fetchall()
-    return {row[0]: (row[1] == "WORKING", row[2]) for row in rows}
+    return {row[0]: (row[1] == "WORKING", datetime.datetime.fromisoformat(row[2])) for row in rows}
 
 def start():
     connection = sqlite3.connect("main.db")
@@ -112,7 +113,7 @@ def start():
         print(f"entered loop in {user_interval} seconds\n")
         for url in urls:
             (isDown, status, latency) = false_positive_check(url)
-            prev_state, prev_timestamp = previous_status.get(url, None)
+            prev_state, prev_timestamp = previous_status.get(url, (None, None))
 
             if prev_state is None or prev_state != isDown: #if the previous value isnt the same as the current value, or its ur first time
                 if isDown:
@@ -125,7 +126,7 @@ def start():
                         Time Stamp: {down_time_timestamp}"""
                     
                     previous_status[url] = (True, down_time_timestamp)
-                    insert_value(connection, url, status, None, down_time_timestamp)
+                    insert_value(connection, url, status, None, down_time_timestamp.isoformat())
 
                 else:
                     up_time_timestamp = datetime.datetime.now().replace(microsecond=0)
@@ -140,7 +141,7 @@ def start():
                         Total Downtime: {duration.total_seconds()}s"""
                         
                     previous_status[url] = (False, None)
-                    insert_value(connection, url, "WORKING", latency, up_time_timestamp)
+                    insert_value(connection, url, "WORKING", latency, up_time_timestamp.isoformat())
                 
                 if prev_state is not None: #only send when it is not first time 
                     send_email(message, subject)
