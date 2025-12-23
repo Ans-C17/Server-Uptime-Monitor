@@ -5,6 +5,9 @@ import time
 import datetime
 from flask import Flask, request, jsonify
 import threading
+import sqlite3
+
+urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
 
 app = Flask(__name__)
 user_interval = 3 #default
@@ -20,9 +23,6 @@ def set_user_interval():
     user_interval = interval
     return (jsonify({"message": f"Interval set to {user_interval} seconds"}), 200)
 
-urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
-
-previous_status = {url: (None, None) for url in urls} #bool, down_time
 
 def check_url(url):
     try:
@@ -54,7 +54,7 @@ def false_positive_check(url, retries=2):
 def send_email(message, subject):
     sender = "hoaxsterburger@gmail.com"
     receiver = "jovanacarmel@gmail.com"
-    app_password = "ehbr afwu jhat qhqb"
+    app_password = "rvuy lpvi pkuw czkg"
 
     msg = MIMEText(message)
     msg["Subject"] = subject
@@ -69,12 +69,50 @@ def send_email(message, subject):
     except Exception as e:
         print(f"{e}")
 
+def create_connection(connection):
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            status TEXT NOT NULL,
+            latency REAL,
+            timestamp TEXT NOT NULL
+        )
+    """)
+
+    connection.commit()
+
+def insert_value(connection, url, status, latency, timestamp):
+    cursor = connection.cursor()
+    cursor.execute(
+        "INSERT INTO history (url, status, latency, timestamp) VALUES (?, ?, ?, ?)", (url, status, latency, timestamp)
+    )
+    connection.commit()
+
+def get_previous_values(connection):
+    cursor = connection.cursor()
+    cursor.execute("""
+        SELECT url, status, MAX(timestamp)
+        FROM history
+        GROUP BY url
+    """)
+
+    rows = cursor.fetchall()
+    return {row[0]: (row[1] == "WORKING", row[2]) for row in rows}
+
 def start():
+    connection = sqlite3.connect("main.db")
+    create_connection(connection)
+
+    previous_status = get_previous_values(connection) #stores bool and down_time
+
     while True:
         print(f"entered loop in {user_interval} seconds\n")
         for url in urls:
             (isDown, status, latency) = false_positive_check(url)
-            prev_state, timestamp = previous_status.get(url, None)
+            prev_state, prev_timestamp = previous_status.get(url, None)
 
             if prev_state is None or prev_state != isDown: #if the previous value isnt the same as the current value, or its ur first time
                 if isDown:
@@ -86,11 +124,12 @@ def start():
                         Error: {status}
                         Time Stamp: {down_time_timestamp}"""
                     
-                    previous_status[url] = (isDown, down_time_timestamp)
+                    previous_status[url] = (True, down_time_timestamp)
+                    insert_value(connection, url, status, None, down_time_timestamp)
 
                 else:
                     up_time_timestamp = datetime.datetime.now().replace(microsecond=0)
-                    duration = up_time_timestamp - previous_status[url][1] if previous_status[url][1] is not None else datetime.timedelta(0)
+                    duration = up_time_timestamp - prev_timestamp if prev_timestamp is not None else datetime.timedelta(0)
                     
                     subject = "SERVER RESTORED"
                     message = f"""
@@ -100,11 +139,11 @@ def start():
                         Recovered Time: {up_time_timestamp}
                         Total Downtime: {duration.total_seconds()}s"""
                         
-                    previous_status[url] = (isDown, None)
+                    previous_status[url] = (False, None)
+                    insert_value(connection, url, "WORKING", latency, up_time_timestamp)
                 
                 if prev_state is not None: #only send when it is not first time 
                     send_email(message, subject)
-            
 
         time.sleep(user_interval)
 
