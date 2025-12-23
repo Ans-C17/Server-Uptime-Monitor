@@ -3,9 +3,24 @@ import smtplib
 from email.mime.text import MIMEText
 import time
 import datetime
+from flask import Flask, request, jsonify
+import threading
+
+app = Flask(__name__)
+user_interval = 3 #default
+
+@app.route("/interval", methods=["POST"])
+def set_user_interval():
+    global user_interval
+    data = request.json
+    interval = data.get("interval")
+    if interval is None or not type(interval) == int:
+        return (jsonify({"error: interval not int"}), 400)
+    
+    user_interval = interval
+    return (jsonify({"message": f"Interval set to {user_interval} seconds"}), 200)
 
 urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
-user_interval = 3 #make this settable by user
 
 previous_status = {url: (None, None) for url in urls} #bool, down_time
 
@@ -54,39 +69,46 @@ def send_email(message, subject):
     except Exception as e:
         print(f"{e}")
 
-while True:
-    for url in urls:
-        (isDown, status, latency) = false_positive_check(url)
-        prev_state, timestamp = previous_status.get(url, None)
+def start():
+    while True:
+        print(f"entered loop in {user_interval} seconds\n")
+        for url in urls:
+            (isDown, status, latency) = false_positive_check(url)
+            prev_state, timestamp = previous_status.get(url, None)
 
-        if prev_state is None or prev_state != isDown: #if the previous value isnt the same as the current value, or its ur first time
-            if isDown:
-                down_time_timestamp = datetime.datetime.now().replace(microsecond=0)
+            if prev_state is None or prev_state != isDown: #if the previous value isnt the same as the current value, or its ur first time
+                if isDown:
+                    down_time_timestamp = datetime.datetime.now().replace(microsecond=0)
 
-                subject = "SERVER DOWN"
-                message = f"""
-                    Service: {url}
-                    Error: {status}
-                    Time Stamp: {down_time_timestamp}"""
-                
-                previous_status[url] = (isDown, down_time_timestamp)
-
-            else:
-                up_time_timestamp = datetime.datetime.now().replace(microsecond=0)
-                duration = up_time_timestamp - previous_status[url][1] if previous_status[url][1] is not None else datetime.timedelta(0)
-                
-                subject = "SERVER RESTORED"
-                message = f"""
-                    Service: {url}
-                    Status: {status} (WORKING)
-                    Latency: {round(latency, 2)}s
-                    Recovered Time: {up_time_timestamp}
-                    Total Downtime: {duration.total_seconds()}s"""
+                    subject = "SERVER DOWN"
+                    message = f"""
+                        Service: {url}
+                        Error: {status}
+                        Time Stamp: {down_time_timestamp}"""
                     
-                previous_status[url] = (isDown, None)
-            
-            if prev_state is not None:
-                send_email(message, subject)
-        
+                    previous_status[url] = (isDown, down_time_timestamp)
 
-    time.sleep(user_interval)
+                else:
+                    up_time_timestamp = datetime.datetime.now().replace(microsecond=0)
+                    duration = up_time_timestamp - previous_status[url][1] if previous_status[url][1] is not None else datetime.timedelta(0)
+                    
+                    subject = "SERVER RESTORED"
+                    message = f"""
+                        Service: {url}
+                        Status: {status} (WORKING)
+                        Latency: {round(latency, 2)}s
+                        Recovered Time: {up_time_timestamp}
+                        Total Downtime: {duration.total_seconds()}s"""
+                        
+                    previous_status[url] = (isDown, None)
+                
+                if prev_state is not None: #only send when it is not first time 
+                    send_email(message, subject)
+            
+
+        time.sleep(user_interval)
+
+if __name__ == "__main__":
+    start_thread = threading.Thread(target=start, daemon=True)
+    start_thread.start()
+    app.run(port=5000)
