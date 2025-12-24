@@ -7,8 +7,6 @@ from flask import Flask, request, jsonify
 import threading
 import sqlite3
 
-#TODO: MAKE THE TIME INTO DAYS HOURS SECONDS FUNCTION THING
-
 urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
 
 app = Flask(__name__)
@@ -105,6 +103,24 @@ def get_previous_values(connection):
     rows = cursor.fetchall()
     return {row[0]: (row[1] != "WORKING", datetime.datetime.fromisoformat(row[2])) for row in rows}
 
+def convert_time(duration_in_seconds):
+    days = int(duration_in_seconds // 86400)
+    hours = int((duration_in_seconds % 86400) // 3600)
+    minutes = int((duration_in_seconds % 3600) // 60)
+    secs = int(duration_in_seconds % 60)
+    
+    parts = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0 or not parts:  # Always show seconds if nothing else
+        parts.append(f"{secs}s")
+    
+    return " ".join(parts)
+
 def start():
     connection = sqlite3.connect("main.db")
     create_connection(connection)
@@ -141,7 +157,7 @@ def start():
                         Status: {status} (WORKING)
                         Latency: {round(latency, 2)}s
                         Recovered Time: {up_time_timestamp}
-                        Total Downtime: {duration.total_seconds()}s"""
+                        Total Downtime: {convert_time(duration.total_seconds())}"""
                         
                     previous_status[url] = (False, None)
                     insert_value(connection, url, "WORKING", latency, up_time_timestamp.isoformat())
