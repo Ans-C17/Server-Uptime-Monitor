@@ -1,20 +1,20 @@
-import requests
-import smtplib
-from email.mime.text import MIMEText
 import time
-import datetime
 from flask import Flask, request, jsonify
 import threading
-import sqlite3
 from dotenv import load_dotenv
-import os
+import sqlite3
+import datetime
+
+from src.core.config import DB, DEFAULT_INTERVAL, URLS, RETRIES
+from src.core.monitor import false_positive_check
+from src.services.email import send_email
+from src.services.database import create_connection, insert_value, get_previous_values
+from src.services.convert_time import convert_time
 
 load_dotenv()
 
-urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
-
+user_interval = DEFAULT_INTERVAL
 app = Flask(__name__)
-user_interval = 3 #default
 
 @app.route("/interval", methods=["POST"])
 def set_user_interval():
@@ -22,122 +22,23 @@ def set_user_interval():
     data = request.json
     interval = data.get("interval")
     if interval is None or not type(interval) == int:
-        return (jsonify({"error: interval not int"}), 400)
+        return (jsonify({"error": "interval not int"}), 400)
     
     user_interval = interval
     return (jsonify({"message": f"Interval set to {user_interval} seconds"}), 200)
 
-
-def check_url(url):
-    try:
-        start_time = time.time()
-        response = requests.get(url, timeout=5)
-        latency = time.time() - start_time
-        return (True, response.status_code,  latency)
-
-    except requests.exceptions.Timeout:
-        error = "Timeout"
-    except requests.exceptions.ConnectionError:
-        error = "Connection Failed"
-    except requests.exceptions.RequestException:
-        error = "Generic Error"
-    
-    return (False, str(error), None)
-
-def false_positive_check(url, retries=2):
-    for i in range(retries):
-        result_tuple = check_url(url)
-        (isWorking, status, latency) = result_tuple
-        if isWorking:
-            return (False, status, latency)
-
-        time.sleep(2)
-    
-    return (True, status, latency)
-
-def send_email(message, subject):
-    sender = os.getenv("EMAIL")
-    app_password = os.getenv("PASS")
-
-    receiver = "jovanacarmel@gmail.com"
-
-    msg = MIMEText(message)
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = receiver
-
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(sender, app_password)
-            server.send_message(msg)
-    except Exception as e:
-        print(f"{e}")
-
-def create_connection(connection):
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT NOT NULL,
-            status TEXT NOT NULL,
-            latency REAL,
-            timestamp TEXT NOT NULL
-        )
-    """)
-
-    connection.commit()
-
-def insert_value(connection, url, status, latency, timestamp):
-    cursor = connection.cursor()
-    cursor.execute(
-        "INSERT INTO history (url, status, latency, timestamp) VALUES (?, ?, ?, ?)", (url, status, latency, timestamp)
-    )
-    
-    connection.commit()
-
-def get_previous_values(connection):
-    cursor = connection.cursor()
-    cursor.execute("""
-        SELECT url, status, MAX(timestamp)
-        FROM history
-        GROUP BY url
-    """)
-
-    rows = cursor.fetchall()
-    return {row[0]: (row[1] != "WORKING", datetime.datetime.fromisoformat(row[2])) for row in rows}
-
-def convert_time(duration_in_seconds):
-    days = int(duration_in_seconds // 86400)
-    hours = int((duration_in_seconds % 86400) // 3600)
-    minutes = int((duration_in_seconds % 3600) // 60)
-    secs = int(duration_in_seconds % 60)
-    
-    parts = []
-    if days > 0:
-        parts.append(f"{days}d")
-    if hours > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0:
-        parts.append(f"{minutes}m")
-    if secs > 0 or not parts:  # Always show seconds if nothing else
-        parts.append(f"{secs}s")
-    
-    return " ".join(parts)
-
 def start():
-    connection = sqlite3.connect("main.db")
+    connection = sqlite3.connect(DB)
     create_connection(connection)
 
     previous_status = get_previous_values(connection) #NOTE: stores isDown and down_time, NOT isUp, so true = down
-
+    urls = URLS
     while True:
         print(f"entered loop in {user_interval} seconds\n")
         for url in urls:
-            (isDown, status, latency) = false_positive_check(url)
+            (isDown, status, latency) = false_positive_check(url, RETRIES)
             prev_state, prev_timestamp = previous_status.get(url, (None, None))
-            print(f"{url} -> {(prev_state, prev_timestamp)}\n")
+            print(f"PREVIOUS STATE: {url} -> {(prev_state, prev_timestamp)}\n")
 
             if prev_state is None or prev_state != isDown: #if the previous value isnt the same as the current value, or its ur first time
                 if isDown:
