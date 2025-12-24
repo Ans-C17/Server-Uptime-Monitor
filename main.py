@@ -7,6 +7,8 @@ from flask import Flask, request, jsonify
 import threading
 import sqlite3
 
+#TODO: MAKE THE TIME INTO DAYS HOURS SECONDS FUNCTION THING
+
 urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
 
 app = Flask(__name__)
@@ -101,19 +103,20 @@ def get_previous_values(connection):
     """)
 
     rows = cursor.fetchall()
-    return {row[0]: (row[1] == "WORKING", datetime.datetime.fromisoformat(row[2])) for row in rows}
+    return {row[0]: (row[1] != "WORKING", datetime.datetime.fromisoformat(row[2])) for row in rows}
 
 def start():
     connection = sqlite3.connect("main.db")
     create_connection(connection)
 
-    previous_status = get_previous_values(connection) #stores bool and down_time
+    previous_status = get_previous_values(connection) #stores isDown and down_time
 
     while True:
         print(f"entered loop in {user_interval} seconds\n")
         for url in urls:
             (isDown, status, latency) = false_positive_check(url)
             prev_state, prev_timestamp = previous_status.get(url, (None, None))
+            print(f"{url} -> {(prev_state, prev_timestamp)}\n")
 
             if prev_state is None or prev_state != isDown: #if the previous value isnt the same as the current value, or its ur first time
                 if isDown:
