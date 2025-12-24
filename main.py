@@ -6,6 +6,10 @@ import datetime
 from flask import Flask, request, jsonify
 import threading
 import sqlite3
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 urls = ["http://localhost:5173/", "https://google.com", "https://discord.com", "https://visuallearner.org", "https://claude.ai", "https://leetcode.com/problemset"]
 
@@ -52,9 +56,10 @@ def false_positive_check(url, retries=2):
     return (True, status, latency)
 
 def send_email(message, subject):
-    sender = "hoaxsterburger@gmail.com"
+    sender = os.getenv("EMAIL")
+    app_password = os.getenv("PASS")
+
     receiver = "jovanacarmel@gmail.com"
-    app_password = "rvuy lpvi pkuw czkg"
 
     msg = MIMEText(message)
     msg["Subject"] = subject
@@ -125,7 +130,7 @@ def start():
     connection = sqlite3.connect("main.db")
     create_connection(connection)
 
-    previous_status = get_previous_values(connection) #stores isDown and down_time
+    previous_status = get_previous_values(connection) #NOTE: stores isDown and down_time, NOT isUp, so true = down
 
     while True:
         print(f"entered loop in {user_interval} seconds\n")
