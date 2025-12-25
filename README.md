@@ -1,8 +1,8 @@
-🚨 Server Uptime Monitor
+#🚨 Server Uptime Monitor
 
 A lightweight, real-time website monitoring system that tracks the uptime of multiple URLs and sends instant email alerts when services go down or come back online.
 
-✨ Features
+##✨ Features
 
 🔄 Real-time Monitoring: Continuously checks the status of configured URLs at customizable intervals
 
@@ -18,7 +18,7 @@ A lightweight, real-time website monitoring system that tracks the uptime of mul
 
 🧵 Multi-threaded: Non-blocking Flask server runs alongside monitoring loop
 
-🛠️ Tech Stack
+##🛠️ Tech Stack
 
 🐍 Python 3.x
 
